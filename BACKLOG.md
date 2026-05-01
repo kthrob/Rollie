@@ -66,111 +66,6 @@ Other tasks or external requirements this depends on.
 
 ---
 
-### [PLANNED] Clean up partial output on interrupted abliteration (#ROLLIE-3)
-
-- **ID**: ROLLIE-3
-- **Type**: bug
-- **Priority**: high
-- **Effort**: small
-- **Added**: 2026-05-01
-- **Updated**: 2026-05-01
-- **Author**: agent
-
-#### Problem / Motivation
-
-If the user presses Ctrl-C during the heretic stage, the abliterated output directory is created but contains incomplete model files. On the next run, the pipeline sees the directory exists and skips heretic entirely — serving a corrupt model through the rest of the pipeline.
-
-The same issue applies (less critically) if the GGUF conversion step is interrupted: the partial `.gguf` file is left on disk and will be mistaken for a complete file on resumption.
-
-#### Proposed Solution
-
-Add a sentinel file (e.g. `$ABL_DIR/.rollie_complete`) that is written only after heretic exits successfully. The resumption check should test for the sentinel, not just the directory. If the directory exists without the sentinel, warn the user and prompt to re-run heretic or clean the partial output.
-
-Same approach for the GGUF file: write a sentinel `$GGUF_FINAL.ok` after `llama-quantize` succeeds; check for the sentinel rather than the file.
-
-#### Implementation Notes
-
-- **rollie.fish, abliterate stage (~line where ABL_DIR check is)**:
-  Replace `test -d "$ABL_DIR"` with `test -f "$ABL_DIR/.rollie_complete"`.
-  After heretic succeeds, write `touch "$ABL_DIR/.rollie_complete"`.
-  If directory exists but sentinel is missing, show a warning and prompt:
-  `rm -rf "$ABL_DIR" and rerun heretic? [y/N]`
-
-- **rollie.fish, GGUF stage (~line where GGUF_FINAL check is)**:
-  Replace `test -f "$GGUF_FINAL"` with `test -f "$GGUF_FINAL.ok"`.
-  After `llama-quantize` succeeds, write `touch "$GGUF_FINAL.ok"`.
-  If GGUF exists without sentinel, warn and offer to re-quantize.
-
-- The `--clean` command already deletes the whole directory and `.gguf` files —
-  also add `rm -f "$GGUF_FINAL.ok"` there.
-
-#### Acceptance Criteria
-
-- [ ] Interrupting heretic mid-run and rerunning does not silently skip to conversion
-- [ ] Interrupted heretic triggers a warning + prompt to clean and retry
-- [ ] Interrupting GGUF quantization and rerunning triggers a re-quantize, not a skip
-- [ ] `--clean` removes sentinels alongside other files
-- [ ] Fully completed runs are still correctly detected as resumable
-
----
-
-### [PLANNED] Fine-tuning support via MLX-LM (#ROLLIE-1)
-
-- **ID**: ROLLIE-1
-- **Type**: feature
-- **Priority**: medium
-- **Effort**: large
-- **Added**: 2026-05-01
-- **Updated**: 2026-05-01
-- **Author**: agent
-
-#### Problem / Motivation
-
-The current pipeline produces an abliterated model with no domain-specific fine-tuning. The design brief includes a fine-tuning stage using MLX-LM (Apple's native ML framework) to apply LoRA adapters after abliteration.
-
-#### Proposed Solution
-
-Add an optional `--finetune <dataset-dir>` flag to `rollie`. When supplied, insert a MLX-LM LoRA training step between abliteration and GGUF conversion. The adapter is stored in the workspace and merged into the base before conversion.
-
-Because MLX-LM fine-tuning requires a user-supplied dataset, this flag is explicitly opt-in and documented as requiring dataset preparation outside of rollie.
-
-#### Implementation Notes
-
-- New env: `~/rollie-workspace/envs/mlx/` with `mlx-lm` installed
-- Add to `setup.fish` as an optional step (prompt user, skip if declined)
-- New workspace dir: `~/rollie-workspace/models/adapters/<slug>/`
-- Pipeline with `--finetune`:
-  1. Abliterate (existing)
-  2. Fine-tune: `mlx_lm.lora --model $ABL_DIR --train --data <dataset-dir> --adapter-path $ADAPTERS_DIR/$SLUG`
-  3. Merge: `mlx_lm.fuse --model $ABL_DIR --adapter-path $ADAPTERS_DIR/$SLUG --save-path $MERGED_DIR/$SLUG`
-  4. Convert (existing, using merged dir)
-  5. Quantize + import (existing)
-- The merged dir replaces `$ABL_DIR` as the input to the convert stage when `--finetune` is used
-- Dataset format (JSONL, ChatML): document clearly in `--help` output and README
-- LoRA hyperparameters: expose `--lora-iters` and `--lora-layers` flags with sensible defaults (iters=1000, layers=16)
-
-#### Open Questions (answer before implementing)
-
-- What is the intended use case / domain for fine-tuning? This determines dataset format and LoRA rank.
-- Should `mlx_lm.fuse` (merge without mergekit) suffice, or is mergekit needed for more complex merge recipes?
-
-#### Acceptance Criteria
-
-- [ ] `rollie <hf-id> --finetune ~/my-dataset/` runs the full 5-stage pipeline
-- [ ] `--finetune` without `--dataset` (or with a missing dir) fails with a clear error
-- [ ] Fine-tuned adapter is preserved in workspace for inspection
-- [ ] `--skip-import` still works when combined with `--finetune`
-- [ ] `--clean` removes adapter and merged dirs alongside other workspace files
-- [ ] `setup.fish` offers optional MLX env install
-- [ ] `--help` output documents dataset format and hyperparameter flags
-
-#### Dependencies
-
-- ROLLIE-3 (sentinel files) should land first — fine-tuning adds another interruptible stage
-- User must supply a training dataset; format guidance documented in README
-
----
-
 ### [PLANNED] mergekit integration for advanced model merging (#ROLLIE-2)
 
 - **ID**: ROLLIE-2
@@ -215,3 +110,143 @@ Add a `--merge-config <path>` flag that accepts a mergekit YAML recipe. When sup
 ## Completed
 
 <!-- Completed tasks are moved here. Keep them for reference. -->
+
+### [DONE] MLX-LM fine-tuning support (#ROLLIE-1)
+
+- **ID**: ROLLIE-1
+- **Type**: feature
+- **Priority**: high
+- **Effort**: medium
+- **Added**: 2026-05-01
+- **Updated**: 2026-04-30
+- **Author**: agent
+
+#### Problem / Motivation
+
+The pipeline produced an abliterated model with no fine-tuning. The user wanted composable training: fine-tune standalone (no abliteration) or chain finetune onto the abliterate pipeline.
+
+#### Solution implemented
+
+- `rollie finetune <model> --data <dir>` — standalone subcommand; downloads HF model if needed, runs `mlx_lm.lora` then `mlx_lm.fuse`, then convert/quantize/import
+- `rollie <hf-id> --finetune <dir>` — chains fine-tuning after abliteration
+- Shared `_rollie_gguf_pipeline` helper eliminates code duplication between both paths
+- Sentinel files: `.rollie_finetune_complete` and `.rollie_merge_complete` for resumability
+- `--clean` extended to remove `base/`, `adapters/`, `merged/` dirs
+- Opt-in MLX env in `setup.fish`; config defaults from ROLLIE-5
+
+#### Acceptance Criteria
+
+- [x] `rollie finetune <hf-id> --data <dir>` runs end-to-end
+- [x] `rollie finetune <local-path> --data <dir>` works with a local model dir
+- [x] `rollie <hf-id> --finetune <dir>` chains correctly after abliteration
+- [x] Defaults from `~/.config/rollie/finetune_defaults` are picked up; inline flags override
+- [x] Adapter and merged dirs are preserved for inspection
+- [x] `--clean <slug>` removes adapter + merged dirs
+- [x] `setup.fish` offers optional MLX env install
+- [x] `--skip-import` still works when chained
+- [x] `--help` documents dataset format and hyperparameter flags
+
+---
+
+### [DONE] Dataset curation module (#ROLLIE-4)
+
+- **ID**: ROLLIE-4
+- **Type**: feature
+- **Priority**: high
+- **Effort**: large
+- **Added**: 2026-05-01
+- **Updated**: 2026-04-30
+- **Author**: agent
+
+#### Problem / Motivation
+
+Fine-tuning needs training data. The user wanted rollie to generate ChatML JSONL datasets from real source material using a local Ollama model, with a persona mode for style/voice training.
+
+#### Solution implemented
+
+- `rollie curate` subcommand dispatching to Python scripts in `~/.config/fish/rollie-scripts/`
+- Sources: `--code` (codebase + AST chunking), `--repo` (shallow clone), `--db` (SQLite/PostgreSQL), `--files` (PDF/DOCX/MD/TXT), `--persona` (agency-agents format)
+- Q&A generation via `scripts/qa_generator.py` (POST /api/chat)
+- Quality pass via `scripts/quality_pass.py` (second Ollama call, 1–5 rating, configurable threshold)
+- Output: ChatML JSONL `{"text": "<|im_start|>user\n...<|im_end|>\n<|im_start|>assistant\n...<|im_end|>"}`
+- Opt-in curate env in `setup.fish`
+
+#### Acceptance Criteria
+
+- [x] `rollie curate --persona ./test-persona.md --output ./test-out/` produces valid ChatML JSONL
+- [x] `rollie curate --code <path>` ingests respecting .gitignore, chunks by AST when possible
+- [x] `rollie curate --repo <url>` shallow-clones and ingests (code + docs only)
+- [x] `rollie curate --db sqlite:///test.db` extracts schema + samples and emits Q&A
+- [x] `rollie curate --db postgresql://...` works with PostgreSQL
+- [x] `rollie curate --files <path>` handles PDF, DOCX, MD, TXT
+- [x] Composing multiple sources merges into one JSONL
+- [x] Quality pass filters at the configured threshold; `--no-quality-pass` skips
+- [ ] Resumable: per-chunk sentinels not yet implemented (full re-run needed; follow-up task)
+- [x] `setup.fish` offers optional curate env install
+- [x] `--help` documents all source flags and the dataset format
+
+---
+
+### [DONE] Config commands and curate model picker (#ROLLIE-5)
+
+- **ID**: ROLLIE-5
+- **Type**: feature
+- **Priority**: high
+- **Effort**: small
+- **Added**: 2026-05-01
+- **Updated**: 2026-04-30
+- **Author**: agent
+
+#### Problem / Motivation
+
+The curate module needs a configured Ollama model to call for Q&A generation, and the finetune module needs sensible default hyperparameters. Both should be persistent settings so the user doesn't have to pass them every run.
+
+#### Solution implemented
+
+- Config dir: `~/.config/rollie/` (created on first use)
+- `~/.config/rollie/data_curation_model` — persisted model name
+- `~/.config/rollie/finetune_defaults` — `iters=N`, `num_layers=N`, `lora_rank=N`
+- `_rollie_local_models` helper starts/stops ollama as needed, mirrors llamy pattern
+- `_rollie_curation_model` and `_rollie_finetune_defaults` helpers read config with defaults
+- `--status` extended with Environments and Config sections
+
+#### Acceptance Criteria
+
+- [x] `rollie --set-data-curation-model` shows installed Ollama models, persists choice
+- [x] `rollie --set-finetune-defaults` prompts for and persists iters/layers/rank
+- [x] `rollie --status` shows both settings (or "not set" if absent)
+- [x] `rollie --help` documents both flags
+- [x] If no Ollama models installed, `--set-data-curation-model` shows a clear error pointing at `ollama pull`
+
+---
+
+### [DONE] Clean up partial output on interrupted abliteration (#ROLLIE-3)
+
+- **ID**: ROLLIE-3
+- **Type**: bug
+- **Priority**: high
+- **Effort**: small
+- **Added**: 2026-05-01
+- **Updated**: 2026-05-01
+- **Author**: agent
+
+#### Problem / Motivation
+
+If the user presses Ctrl-C during heretic, the abliterated output directory is created but contains incomplete model files. On the next run the pipeline saw the directory and silently skipped heretic — feeding a corrupt model into conversion. Same problem for an interrupted GGUF quantization step leaving a partial `.gguf` file.
+
+#### Solution implemented
+
+Added sentinel files written only after each stage exits successfully:
+
+- `$ABL_DIR/.rollie_complete` — written after heretic succeeds
+- `$GGUF_FINAL.ok` — written after `llama-quantize` succeeds
+
+Resumption checks test for the sentinel, not the directory/file. If the directory/file exists without its sentinel, the user is warned and prompted to remove the partial output and retry. `--clean` removes sentinels alongside other workspace files.
+
+#### Acceptance Criteria
+
+- [x] Interrupting heretic mid-run and rerunning does not silently skip to conversion
+- [x] Interrupted heretic triggers a warning + prompt to clean and retry
+- [x] Interrupting GGUF quantization and rerunning triggers a re-quantize, not a skip
+- [x] `--clean` removes sentinels alongside other files
+- [x] Fully completed runs are still correctly detected as resumable

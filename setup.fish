@@ -164,7 +164,11 @@ set WORKSPACE "$HOME/rollie-workspace"
 
 mkdir -p \
     "$WORKSPACE/models/abliterated" \
+    "$WORKSPACE/models/base" \
+    "$WORKSPACE/models/adapters" \
+    "$WORKSPACE/models/merged" \
     "$WORKSPACE/models/gguf" \
+    "$WORKSPACE/datasets" \
     "$WORKSPACE/envs" \
     "$WORKSPACE/logs"
 
@@ -247,9 +251,71 @@ else
     warn "       -o $CONVERT_SCRIPT && chmod +x $CONVERT_SCRIPT"
 end
 
-# ── 10. Install rollie.fish ───────────────────────────────────────────────────
+# ── 10. MLX environment (optional — for fine-tuning) ─────────────────────────
 
-header "Installing rollie"
+header "MLX fine-tuning environment (optional)"
+
+set MLX_ENV "$WORKSPACE/envs/mlx"
+
+read --prompt-str (set_color cyan)"[setup]"(set_color normal)" Install MLX fine-tuning env? (enables 'rollie finetune') [y/N]: " _install_mlx
+if test "$_install_mlx" = "y" -o "$_install_mlx" = "Y"
+    if test -d "$MLX_ENV"
+        info "MLX env exists — upgrading packages..."
+    else
+        info "Creating MLX env (Python 3.11)..."
+        uv venv "$MLX_ENV" --python 3.11
+        or die "Failed to create MLX venv."
+    end
+
+    info "Installing mlx-lm..."
+    uv pip install --python "$MLX_ENV/bin/python3" \
+        mlx-lm \
+        2>&1
+    or die "Failed to install mlx-lm."
+    ok "MLX env ready: $MLX_ENV"
+else
+    ok "Skipped MLX env (run setup.fish again to install later)."
+end
+
+# ── 11. Curate environment (optional — for dataset curation) ──────────────────
+
+header "Dataset curation environment (optional)"
+
+set CURATE_ENV "$WORKSPACE/envs/curate"
+
+read --prompt-str (set_color cyan)"[setup]"(set_color normal)" Install curate env? (enables 'rollie curate') [y/N]: " _install_curate
+if test "$_install_curate" = "y" -o "$_install_curate" = "Y"
+    if test -d "$CURATE_ENV"
+        info "Curate env exists — upgrading packages..."
+    else
+        info "Creating curate env (Python 3.11)..."
+        uv venv "$CURATE_ENV" --python 3.11
+        or die "Failed to create curate venv."
+    end
+
+    info "Installing curation dependencies — this may take a few minutes..."
+    uv pip install --python "$CURATE_ENV/bin/python3" \
+        pymupdf \
+        python-docx \
+        markdown-it-py \
+        beautifulsoup4 \
+        httpx \
+        psycopg2-binary \
+        sqlalchemy \
+        tree-sitter-languages \
+        pathspec \
+        requests \
+        pydantic \
+        2>&1
+    or die "Failed to install curate packages."
+    ok "Curate env ready: $CURATE_ENV"
+else
+    ok "Skipped curate env (run setup.fish again to install later)."
+end
+
+# ── 12. Install rollie.fish ───────────────────────────────────────────────────
+
+header "Installing rollie.fish"
 
 if test -n "$__fish_config_dir"
     set FISH_FUNCTIONS "$__fish_config_dir/functions"
@@ -265,6 +331,14 @@ chmod +x "$DEST"
 
 ok "rollie.fish installed → $DEST"
 
+# Install curate scripts next to the function
+if test -d ./scripts
+    set SCRIPTS_DEST "$HOME/.config/fish/rollie-scripts"
+    mkdir -p "$SCRIPTS_DEST"
+    cp -r ./scripts/. "$SCRIPTS_DEST/"
+    ok "curate scripts installed → $SCRIPTS_DEST"
+end
+
 if fish -c "type -q rollie"
     ok "rollie command is available in Fish"
 else
@@ -279,9 +353,11 @@ echo (set_color --bold)(set_color green)"  All done!"(set_color normal)
 echo ""
 echo "  Open a new terminal (or run "(set_color cyan)"source ~/.config/fish/config.fish"(set_color normal)") and:"
 echo ""
-echo "    "(set_color --bold)"rollie --help"(set_color normal)"                         see all commands"
-echo "    "(set_color --bold)"rollie Qwen/Qwen3-8B-Instruct"(set_color normal)"         abliterate and import"
-echo "    "(set_color --bold)"rollie --status"(set_color normal)"                        workspace overview"
+echo "    "(set_color --bold)"rollie --help"(set_color normal)"                              see all commands"
+echo "    "(set_color --bold)"rollie Qwen/Qwen3-8B-Instruct"(set_color normal)"              abliterate and import"
+echo "    "(set_color --bold)"rollie finetune <model> --data <dir>"(set_color normal)"        fine-tune a model"
+echo "    "(set_color --bold)"rollie curate --persona persona.md"(set_color normal)"          generate a dataset"
+echo "    "(set_color --bold)"rollie --status"(set_color normal)"                             workspace overview"
 echo ""
 echo "  For gate-locked models (Llama 3.x, Gemma), log in first:"
 echo "    "(set_color --bold)"huggingface-cli login"(set_color normal)
