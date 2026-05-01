@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# logs
+*.log
+
+# editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# env / secrets
+.env
+.env.*
+.webui_secret_key
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# graphify cache and logs
+graphify-out/cache/
+graphify-out/manifest.json
+graphify-out/cost.json
+
+# mem0 and qdrant storage
+.qdrant_storage/
+.chroma_storage/
