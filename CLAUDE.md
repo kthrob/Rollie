@@ -71,7 +71,7 @@ All of the above are installed or upgraded by `setup.fish`.
 | Quality pass | Ollama (same model) | Rates each pair 1–5; drops pairs below threshold |
 | Format + write | Python | Writes ChatML JSONL to output dir |
 
-Each stage is **idempotent** — it checks for existing output and skips if already done. Interrupted runs can be resumed by rerunning the same command.
+Each stage is **idempotent** — it checks for existing output and skips if already done. Interrupted abliterate and finetune runs can be resumed by rerunning the same command. The curate pipeline does not yet have per-chunk checkpointing and will restart fully if interrupted (tracked in ROLLIE-6).
 
 ---
 
@@ -94,7 +94,9 @@ The script will, in order:
 7. Create the workspace at `~/rollie-workspace/`
 8. Create the **heretic** uv env and install `heretic-llm` + PyTorch (MPS)
 9. Create the **convert** uv env, install conversion dependencies, and download `convert_hf_to_gguf.py` version-matched to the installed `llama-quantize`
-10. Copy `rollie.fish` → `~/.config/fish/functions/rollie.fish`
+10. Optionally create the **mlx** uv env and install `mlx-lm` (enables `rollie finetune`)
+11. Optionally create the **curate** uv env and install curation dependencies (enables `rollie curate`)
+12. Copy `rollie.fish` → `~/.config/fish/functions/rollie.fish` and curate scripts → `~/.config/fish/rollie-scripts/`
 
 Then open a new terminal and verify:
 
@@ -117,6 +119,7 @@ rollie Qwen/Qwen3-8B-Instruct --finetune ~/datasets/mydata/  # abliterate then f
 # Standalone fine-tune
 rollie finetune Qwen/Qwen3-4B-Instruct-2507 --data ~/datasets/mydata/
 rollie finetune ~/local/model/ --data ~/datasets/mydata/ --iters 500
+rollie finetune ~/local/model/ --data ~/datasets/mydata/ --lr 5e-5
 
 # Dataset curation
 rollie curate --persona ./persona.md --output ~/datasets/mydata/

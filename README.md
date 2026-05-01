@@ -183,7 +183,7 @@ Source(s): --code / --repo / --db / --files / --persona
 4. Write JSONL          ChatML format to --output/data.jsonl
 ```
 
-All pipelines are **resumable** — each stage checks for existing output before running. Interrupted runs resume from where they left off.
+The abliterate and finetune pipelines are **resumable** — each stage checks for existing output (via sentinel files) before running. Interrupted runs resume from where they left off. The curate pipeline reruns fully on restart; per-chunk resumability is planned.
 
 ---
 
