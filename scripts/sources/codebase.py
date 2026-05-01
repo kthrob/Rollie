@@ -55,10 +55,17 @@ def _load_ignore_spec(root: Path) -> pathspec.PathSpec | None:
     for ignore_file in (".gitignore", ".rollieignore"):
         ig = root / ignore_file
         if ig.exists():
-            patterns.extend(ig.read_text().splitlines())
-    if patterns:
+            try:
+                patterns.extend(ig.read_text().splitlines())
+            except OSError as e:
+                print(f"[codebase] skipping {ig}: {e}", flush=True)
+    if not patterns:
+        return None
+    try:
         return pathspec.PathSpec.from_lines("gitwildmatch", patterns)
-    return None
+    except Exception as e:
+        print(f"[codebase] malformed ignore file, skipping: {e}", flush=True)
+        return None
 
 
 def _load_extension_config() -> set[str] | None:

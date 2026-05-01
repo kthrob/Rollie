@@ -38,7 +38,7 @@ def generate_qa_pairs(
         )
         resp.raise_for_status()
         text = resp.json()["message"]["content"].strip()
-    except Exception as e:
+    except (httpx.HTTPError, KeyError, ValueError) as e:
         print(f"[qa_generator] Ollama error: {e}", flush=True)
         return []
 

@@ -196,7 +196,7 @@ uv pip install --python "$HERETIC_ENV/bin/python3" \
 or die "Failed to install heretic packages."
 
 # Verify heretic is callable
-if not env VIRTUAL_ENV="$HERETIC_ENV" PATH="$HERETIC_ENV/bin:$PATH" command -q heretic
+if not test -x "$HERETIC_ENV/bin/heretic"
     die "heretic command not found after install. Check the output above."
 end
 ok "Heretic env ready: $HERETIC_ENV"

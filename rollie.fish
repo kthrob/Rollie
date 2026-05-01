@@ -243,12 +243,12 @@ function rollie --description "Abliterate a HuggingFace model and import to Olla
 
         set _abl_dir "$WORKSPACE/models/abliterated"
         if test -d "$_abl_dir"
-            set _abls (ls "$_abl_dir" 2>/dev/null)
+            set _abls (find "$_abl_dir" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort)
             if test (count $_abls) -gt 0
                 echo (set_color --bold)"Abliterated:"(set_color normal)
                 for s in $_abls
-                    set _sz (du -sh "$_abl_dir/$s" 2>/dev/null | awk '{print $1}')
-                    echo "  • $s  ($_sz)"
+                    set _sz (du -sh "$s" 2>/dev/null | awk '{print $1}')
+                    echo "  • "(basename "$s")"  ($_sz)"
                 end
                 echo ""
             end
@@ -256,12 +256,12 @@ function rollie --description "Abliterate a HuggingFace model and import to Olla
 
         set _gguf_dir "$WORKSPACE/models/gguf"
         if test -d "$_gguf_dir"
-            set _ggufs (ls "$_gguf_dir" 2>/dev/null | grep '\.gguf$')
+            set _ggufs (find "$_gguf_dir" -maxdepth 1 -name '*.gguf' -type f 2>/dev/null | sort)
             if test (count $_ggufs) -gt 0
                 echo (set_color --bold)"GGUF files:"(set_color normal)
                 for f in $_ggufs
-                    set _sz (du -sh "$_gguf_dir/$f" 2>/dev/null | awk '{print $1}')
-                    echo "  • $f  ($_sz)"
+                    set _sz (du -sh "$f" 2>/dev/null | awk '{print $1}')
+                    echo "  • "(basename "$f")"  ($_sz)"
                 end
                 echo ""
             end
@@ -277,7 +277,7 @@ function rollie --description "Abliterate a HuggingFace model and import to Olla
         end
 
         echo (set_color --bold)"Environments:"(set_color normal)
-        for env_name in heretic convert mlx curate mergekit
+        for env_name in heretic convert mlx curate
             if test -d "$WORKSPACE/envs/$env_name"
                 echo "  ✓ $env_name"
             else
@@ -541,8 +541,10 @@ function rollie --description "Abliterate a HuggingFace model and import to Olla
         _rollie_info "Log:      $_ft_logfile"
         echo ""
 
-        # Resolve base model
-        if string match -q '*/*' -- $_ft_model
+        # Resolve base model — check for local path first, then treat as HF ID
+        if test -d "$_ft_model"
+            set _ft_use_path "$_ft_model"
+        else if string match -q '*/*' -- $_ft_model
             if not test -d "$_ft_base_dir"
                 _rollie_info "Downloading base model from HuggingFace..."
                 if not huggingface-cli download "$_ft_model" --local-dir "$_ft_base_dir" 2>&1 | tee -a "$_ft_logfile"
@@ -555,11 +557,8 @@ function rollie --description "Abliterate a HuggingFace model and import to Olla
             end
             set _ft_use_path "$_ft_base_dir"
         else
-            if not test -d "$_ft_model"
-                _rollie_err "Model path not found: $_ft_model"
-                return 1
-            end
-            set _ft_use_path "$_ft_model"
+            _rollie_err "Model not found — pass a local path or a HuggingFace ID (org/model): $_ft_model"
+            return 1
         end
 
         # LoRA training
@@ -726,8 +725,9 @@ function rollie --description "Abliterate a HuggingFace model and import to Olla
     end
 
     set SLUG    (_rollie_slug $HF_ID)
-    set ABL_DIR "$WORKSPACE/models/abliterated/$SLUG"
-    set LOGFILE "$LOG_DIR/$SLUG.log"
+    set ABL_DIR  "$WORKSPACE/models/abliterated/$SLUG"
+    set GGUF_DIR "$WORKSPACE/models/gguf"
+    set LOGFILE  "$LOG_DIR/$SLUG.log"
 
     mkdir -p "$WORKSPACE/models/abliterated" "$WORKSPACE/models/base" \
              "$WORKSPACE/models/adapters" "$WORKSPACE/models/merged" \

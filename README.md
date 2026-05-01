@@ -62,6 +62,7 @@ rollie <hf-model-id> --finetune <dataset-dir>    # abliterate then fine-tune
 rollie finetune <hf-model-id> --data <dataset-dir>    # download and fine-tune
 rollie finetune <local-model-path> --data <dir>        # use a local model
 rollie finetune <model> --data <dir> --iters 500 --rank 16   # custom hyperparameters
+rollie finetune <model> --data <dir> --lr 5e-5               # custom learning rate
 ```
 
 Dataset must be a directory containing `data.jsonl` in ChatML format:

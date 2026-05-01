@@ -46,8 +46,8 @@ def _read_file(path: Path) -> str:
 
 def _read_pdf(path: Path) -> str:
     import fitz  # pymupdf
-    doc = fitz.open(str(path))
-    return "\n".join(page.get_text() for page in doc)
+    with fitz.open(str(path)) as doc:
+        return "\n".join(page.get_text() for page in doc)
 
 
 def _read_docx(path: Path) -> str:

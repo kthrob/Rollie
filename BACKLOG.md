@@ -66,6 +66,132 @@ Other tasks or external requirements this depends on.
 
 ---
 
+### [PLANNED] Implement `--resume` for interrupted curate runs (#ROLLIE-6)
+
+- **ID**: ROLLIE-6
+- **Type**: feature
+- **Priority**: high
+- **Effort**: medium
+- **Added**: 2026-05-01
+- **Updated**: 2026-05-01
+- **Author**: agent
+
+#### Problem / Motivation
+
+`rollie curate` re-processes all chunks from scratch on every run. Large codebases or long-running persona ingest jobs cannot be safely interrupted — all progress is lost. The `--resume` flag is already parsed by `curate.py` but is a no-op.
+
+#### Proposed Solution
+
+Write a per-chunk sentinel file (e.g. `<output_dir>/.progress/<chunk_hash>.done`) after each chunk's Q&A pairs are appended to the output. On `--resume`, skip any chunk whose sentinel exists and append-open the output JSONL instead of truncating it.
+
+#### Implementation Notes
+
+- `scripts/curate.py`: check `args.resume` in `_process_chunks`; derive chunk hash from `chunk["source"]` + `chunk["content"]` (first 64 bytes is enough)
+- Sentinel dir: `<output_dir>/.progress/`
+- Open `out_file` in append mode when `--resume` is set; create mode otherwise
+- Clean up `.progress/` dir at end of successful run (optional — can leave for debugging)
+
+#### Acceptance Criteria
+
+- [ ] `rollie curate --resume --output <dir>` skips already-processed chunks
+- [ ] Interrupted run can be resumed without duplicate pairs in output
+- [ ] Fresh run (no `--resume`) always truncates output and ignores stale sentinels
+- [ ] `--help` documents `--resume` behavior
+
+---
+
+### [PLANNED] Fix bare `Exception` catches in curate scripts (#ROLLIE-7)
+
+- **ID**: ROLLIE-7
+- **Type**: bug
+- **Priority**: medium
+- **Effort**: small
+- **Added**: 2026-05-01
+- **Updated**: 2026-05-01
+- **Author**: agent
+
+#### Problem / Motivation
+
+`qa_generator.py` and `quality_pass.py` catch bare `Exception`, swallowing `KeyboardInterrupt` and masking the difference between a transient Ollama timeout and a permanent error like a missing model. This makes interrupts unresponsive and debugging hard.
+
+Already partially fixed (httpx/KeyError/ValueError), but `quality_pass.rate_pair` and the JSON parse fallbacks in `persona.py` still use bare catches.
+
+#### Proposed Solution
+
+Audit all `except Exception` / `except:` blocks in `scripts/` and narrow each to the specific exception types expected (e.g. `httpx.HTTPError`, `json.JSONDecodeError`, `KeyError`). Never catch `BaseException` unless re-raising.
+
+#### Implementation Notes
+
+- `scripts/quality_pass.py` `rate_pair`: already fixed to `(httpx.HTTPError, KeyError, ValueError)` — verify
+- `scripts/sources/persona.py` `_generate_conversation` JSON parse: bare `except Exception` at end of function — fix to `json.JSONDecodeError`
+- `scripts/qa_generator.py` `_parse_json_array`: bare `except json.JSONDecodeError` — already correct
+
+#### Acceptance Criteria
+
+- [ ] No bare `except Exception` or `except:` in `scripts/`
+- [ ] Ctrl-C during curate exits cleanly
+
+---
+
+### [PLANNED] setup.fish: harden llama.cpp version extraction (#ROLLIE-8)
+
+- **ID**: ROLLIE-8
+- **Type**: bug
+- **Priority**: medium
+- **Effort**: small
+- **Added**: 2026-05-01
+- **Updated**: 2026-05-01
+- **Author**: agent
+
+#### Problem / Motivation
+
+`setup.fish` extracts the llama.cpp build tag from `llama-quantize --version` output using `grep -oE 'b[0-9]+'`. If the output format changes (e.g. Homebrew version string changes), the grep silently returns empty and setup falls back to downloading `convert_hf_to_gguf.py` from the `master` branch — which may be incompatible with the installed binary.
+
+#### Proposed Solution
+
+After the grep, validate the extracted tag is non-empty before using it. If extraction fails, print a clear warning naming the fallback branch and suggest re-running setup after a `brew upgrade llama.cpp`.
+
+#### Implementation Notes
+
+- `setup.fish` around line 235: add `if test -z "$_llama_tag"` guard with a `_warn` message
+- Do not block setup on this failure — the fallback to master is acceptable behavior, just undocumented
+
+#### Acceptance Criteria
+
+- [ ] If version extraction fails, a warning is printed naming the fallback
+- [ ] Setup does not silently proceed with a potentially mismatched script
+
+---
+
+### [DONE] Remove premature mergekit env from `--status` (#ROLLIE-9)
+
+- **ID**: ROLLIE-9
+- **Type**: bug
+- **Priority**: low
+- **Effort**: small
+- **Added**: 2026-05-01
+- **Updated**: 2026-05-01
+- **Author**: agent
+
+#### Problem / Motivation
+
+`rollie --status` lists `mergekit` in the Environments section (rollie.fish line ~280), but `setup.fish` has no mergekit env install step. Every user will see `✗ mergekit (not installed)` even though mergekit is not yet implemented (ROLLIE-2 is still [PLANNED]). This is confusing.
+
+#### Proposed Solution
+
+Remove `mergekit` from the environments loop in `--status` until ROLLIE-2 is implemented and `setup.fish` gains the install step.
+
+#### Implementation Notes
+
+- `rollie.fish`: find `for env_name in heretic convert mlx curate mergekit` and remove `mergekit`
+- Add it back when ROLLIE-2 is in progress
+
+#### Acceptance Criteria
+
+- [ ] `rollie --status` does not show mergekit until it is installable via setup.fish
+
+---
+
 ### [PLANNED] mergekit integration for advanced model merging (#ROLLIE-2)
 
 - **ID**: ROLLIE-2
@@ -181,7 +307,7 @@ Fine-tuning needs training data. The user wanted rollie to generate ChatML JSONL
 - [x] `rollie curate --files <path>` handles PDF, DOCX, MD, TXT
 - [x] Composing multiple sources merges into one JSONL
 - [x] Quality pass filters at the configured threshold; `--no-quality-pass` skips
-- [ ] Resumable: per-chunk sentinels not yet implemented (full re-run needed; follow-up task)
+- [ ] Resumable: per-chunk sentinels not yet implemented — tracked in ROLLIE-6
 - [x] `setup.fish` offers optional curate env install
 - [x] `--help` documents all source flags and the dataset format
 

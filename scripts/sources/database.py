@@ -12,7 +12,7 @@ def ingest(connection_string: str) -> list[dict]:
     Connect to a SQLite or PostgreSQL database, reflect its schema,
     sample rows, and return list of {content, source} dicts.
     """
-    from sqlalchemy import create_engine, inspect, text
+    from sqlalchemy import create_engine, inspect
 
     engine = create_engine(connection_string)
     inspector = inspect(engine)
@@ -69,10 +69,11 @@ def _describe_table(inspector, table: str) -> str:
 
 
 def _sample_rows(engine, table: str) -> str:
-    from sqlalchemy import text
+    from sqlalchemy import text, quoted_name
     try:
         with engine.connect() as conn:
-            result = conn.execute(text(f"SELECT * FROM {table} LIMIT {SAMPLE_ROWS}"))
+            safe_table = quoted_name(table, quote=True)
+            result = conn.execute(text(f"SELECT * FROM {safe_table} LIMIT {SAMPLE_ROWS}"))
             rows = result.fetchall()
             if not rows:
                 return "(no rows)"
@@ -82,7 +83,8 @@ def _sample_rows(engine, table: str) -> str:
                 lines.append("  " + " | ".join(str(v) for v in row))
             return "\n".join(lines)
     except Exception as e:
-        return f"(could not sample rows: {e})"
+        print(f"[database] could not sample rows from {table}: {e}", flush=True)
+        return "(no sample data)"
 
 
 def _split(text: str, source: str) -> list[dict]:

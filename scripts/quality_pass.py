@@ -33,7 +33,7 @@ def rate_pair(question: str, answer: str, model: str, timeout: int = 60) -> int:
         text = resp.json()["message"]["content"].strip()
         m = re.search(r"\b([1-5])\b", text)
         return int(m.group(1)) if m else 0
-    except Exception:
+    except (httpx.HTTPError, KeyError, ValueError):
         return 0
 
 
@@ -45,6 +45,8 @@ def filter_pairs(
     """Return only pairs scoring >= threshold."""
     kept = []
     for p in pairs:
+        if not (isinstance(p, dict) and "question" in p and "answer" in p):
+            continue
         score = rate_pair(p["question"], p["answer"], model)
         if score >= threshold:
             kept.append(p)

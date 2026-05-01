@@ -16,8 +16,12 @@ def ingest(persona_path: str, model: str, n_per_topic: int = 5, timeout: int = 1
 
     Returns list of {system, question, answer} dicts.
     """
-    with open(persona_path, "r", encoding="utf-8") as f:
-        md = f.read()
+    try:
+        with open(persona_path, "r", encoding="utf-8") as f:
+            md = f.read()
+    except OSError as e:
+        print(f"[persona] could not read {persona_path}: {e}", flush=True)
+        return []
 
     system_prompt = _extract_system_prompt(md)
     topics = _seed_topics(md, model, timeout)
@@ -112,7 +116,7 @@ def _generate_conversation(
         resp = httpx.post(f"{OLLAMA_BASE}/api/chat", json=payload, timeout=timeout)
         resp.raise_for_status()
         text = resp.json()["message"]["content"].strip()
-    except Exception as e:
+    except (httpx.HTTPError, KeyError, ValueError) as e:
         print(f"[persona] generation error for topic '{topic}': {e}", flush=True)
         return []
 
