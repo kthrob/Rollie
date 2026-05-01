@@ -7,22 +7,6 @@
 ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚══════╝╚═╝╚══════╝
 ```
 
-```
-             \ | /                 a fish shell command that
-              \|/                  abliterates HuggingFace models
-          ____(.)____              and rolls them into Ollama
-         /  o (_) o  \
-        | --|     |-- |            no cloud GPU.
-        |   |_____|   |            no refusals.
-         \_/         \_/           no gods, no masters.
-              |   |
-            (     )
-           ( ~~~~~ )
-          (  ~~~~~  )
-           ( ~~~~~ )
-            (     )
-```
-
 A fish shell command that automates the [heretic](https://github.com/p-e-w/heretic) abliteration pipeline on Apple Silicon — downloading an open-weight model from HuggingFace, stripping its refusal training, converting it to GGUF, and importing it into Ollama.
 
 Everything runs locally. No cloud GPU required.
